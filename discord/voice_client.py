@@ -112,6 +112,8 @@ class VoiceClient:
         self.encoder = None
         self._lite_nonce = 0
 
+        self.listening_socket = None
+
     warn_nacl = not has_nacl
     supported_modes = (
         'xsalsa20_poly1305_lite',
@@ -137,6 +139,14 @@ class VoiceClient:
             setattr(self, attr, val + value)
 
     # connection related
+
+    async def set_listening_socket(self, port):
+        self.listening_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.listening_socket.setblocking(False)
+        self.listening_socket.bind((socket.gethostbyname_ex(socket.gethostname())[-1][0], port))
+        print("Listening to", socket.gethostbyname_ex(socket.gethostname())[-1][0], port)
+        print("Pushing to:", self.endpoint_ip, self.voice_port)
+        print(self.mode)
 
     async def start_handshake(self):
         log.info('Starting voice handshake...')
@@ -487,3 +497,37 @@ class VoiceClient:
             log.warning('A packet has been dropped (seq: %s, timestamp: %s)', self.sequence, self.timestamp)
 
         self.checked_add('timestamp', opus.Encoder.SAMPLES_PER_FRAME, 4294967295)
+
+    def _decrypt_xsalsa20_poly1305(self, data):
+        box = nacl.secret.SecretBox(bytes(self.secret_key))
+
+        return box.decrypt(data)
+
+    def _decrypt_xsalsa20_poly1305_suffix(self, data):
+        box = nacl.secret.SecretBox(bytes(self.secret_key))
+        data = data[:-nacl.secret.SecretBox.NONCE_SIZE]
+
+        return box.decrypt(data)
+
+    def _decrypt_xsalsa20_poly1305_lite(self, data):
+        box = nacl.secret.SecretBox(bytes(self.secret_key))
+        data = data[:-4]
+
+        return box.decrypt(data)
+
+    async def recv(self, num_bytes):
+        if self._connected.is_set():
+            try:
+                bytes_recv = bytes(self.listening_socket.recvfrom(num_bytes)[0])
+            except BlockingIOError:
+                return None, None
+            print(bytes_recv)
+            header = bytes_recv[:12]
+            ssrc = header[8:]
+            data = bytes_recv[12:]
+            decrypt_packet = getattr(self, '_decrypt_' + self.mode)
+            decrypted_data = decrypt_packet(data)
+            decoded_data = self.encoder.decode(decrypted_data, self.encoder.SAMPLES_PER_FRAME)
+            return decoded_data, ssrc
+        else:
+            return None, None

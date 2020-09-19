@@ -722,6 +722,7 @@ class DiscordVoiceWebSocket:
                 }
             }
         }
+        await self._connection.set_listening_socket(port)
 
         await self.send_as_json(payload)
 

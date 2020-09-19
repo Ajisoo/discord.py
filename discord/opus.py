@@ -280,3 +280,12 @@ class Encoder:
         ret = _lib.opus_encode(self._state, pcm, frame_size, data, max_data_bytes)
 
         return array.array('b', data[:ret]).tobytes()
+
+    def decode(self, data, frame_size):
+        max_data_bytes = len(data)
+        data = ctypes.cast(data, c_int16_ptr)
+        pcm = (ctypes.c_char * max_data_bytes)()
+
+        ret = _lib.opus_decode(self._state, data, frame_size, pcm, max_data_bytes)
+
+        return array.array('b', pcm[:ret]).tobytes()
