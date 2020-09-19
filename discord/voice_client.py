@@ -512,6 +512,7 @@ class VoiceClient:
     def _decrypt_xsalsa20_poly1305_lite(self, data):
         box = nacl.secret.SecretBox(bytes(self.secret_key))
         data = data[:-4]
+        print(data.hex())
 
         return box.decrypt(data)
 
@@ -521,12 +522,19 @@ class VoiceClient:
                 bytes_recv = bytes(self.listening_socket.recvfrom(num_bytes)[0])
             except BlockingIOError:
                 return None, None
-            print(bytes_recv)
-            header = bytes_recv[:12]
-            ssrc = header[8:]
-            data = bytes_recv[12:]
+            print("RAW:", bytes_recv.hex())
+            csrc_length = 0
+            if (bytes_recv[0] & 0x01) != 0:
+                csrc_length = int(bytes_recv[0] & 0x0f) * 4
+                print("EXTENSION: BEDE or DEBE", bytes_recv[12+csrc_length:14+csrc_length].hex())
+            ssrc = bytes_recv[8:12]
+            data = bytes_recv[12 + csrc_length:]
             decrypt_packet = getattr(self, '_decrypt_' + self.mode)
-            decrypted_data = decrypt_packet(data)
+            try:
+                decrypted_data = decrypt_packet(data)
+            except Exception:
+                return None, None
+            print("Successfully decrypted data")
             decoded_data = self.encoder.decode(decrypted_data, self.encoder.SAMPLES_PER_FRAME)
             return decoded_data, ssrc
         else:
