@@ -42,8 +42,11 @@ _lib = None
 
 class EncoderStruct(ctypes.Structure):
     pass
+class DecoderStruct(ctypes.Structure):
+    pass
 
 EncoderStructPtr = ctypes.POINTER(EncoderStruct)
+DecoderStructPtr = ctypes.POINTER(DecoderStruct)
 
 def _err_lt(result, func, args):
     if result < 0:
@@ -76,6 +79,16 @@ exported_functions = [
         None, ctypes.c_int32, _err_lt),
     ('opus_encoder_destroy',
         [EncoderStructPtr], None, None),
+    ('opus_decoder_get_size',
+        [ctypes.c_int], ctypes.c_int, None),
+    ('opus_decoder_create',
+        [ctypes.c_int, ctypes.c_int, c_int_ptr], DecoderStructPtr, _err_ne),
+    ('opus_decode',
+        [DecoderStructPtr, ctypes.c_char_p, ctypes.c_int32, c_int16_ptr, ctypes.c_int, ctypes.c_int], ctypes.c_int, _err_lt),
+    ('opus_decoder_ctl',
+        None, ctypes.c_int32, _err_lt),
+    ('opus_decoder_destroy',
+        [DecoderStructPtr], None, None),
 ]
 
 def libopus_loader(name):
@@ -281,11 +294,74 @@ class Encoder:
 
         return array.array('b', data[:ret]).tobytes()
 
+
+class Decoder:
+    SAMPLING_RATE = 48000
+    CHANNELS = 2
+    FRAME_LENGTH = 20
+    SAMPLE_SIZE = 4  # (bit_rate / 8) * CHANNELS (bit_rate == 16)
+    SAMPLES_PER_FRAME = int(SAMPLING_RATE / 1000 * FRAME_LENGTH)
+
+    FRAME_SIZE = SAMPLES_PER_FRAME * SAMPLE_SIZE
+
+    def __init__(self, application=APPLICATION_AUDIO):
+        self.application = application
+
+        if not is_loaded():
+            if not _load_default():
+                raise OpusNotLoaded()
+
+        self._state = self._create_state()
+        #self.set_bitrate(128)
+        #self.set_fec(True)
+        #self.set_expected_packet_loss_percent(0.15)
+        #self.set_bandwidth('full')
+        #self.set_signal_type('auto')
+
+    def __del__(self):
+        if hasattr(self, '_state'):
+            _lib.opus_decoder_destroy(self._state)
+            self._state = None
+
+    def _create_state(self):
+        ret = ctypes.c_int()
+        return _lib.opus_decoder_create(self.SAMPLING_RATE, self.CHANNELS, ctypes.byref(ret))
+
+    def set_bitrate(self, kbps):
+        kbps = min(512, max(16, int(kbps)))
+
+        _lib.opus_decoder_ctl(self._state, CTL_SET_BITRATE, kbps * 1024)
+        return kbps
+
+    def set_bandwidth(self, req):
+        if req not in band_ctl:
+            raise KeyError('%r is not a valid bandwidth setting. Try one of: %s' % (req, ','.join(band_ctl)))
+
+        k = band_ctl[req]
+        _lib.opus_decoder_ctl(self._state, CTL_SET_BANDWIDTH, k)
+
+    def set_signal_type(self, req):
+        if req not in signal_ctl:
+            raise KeyError('%r is not a valid signal setting. Try one of: %s' % (req, ','.join(signal_ctl)))
+
+        k = signal_ctl[req]
+        _lib.opus_decoder_ctl(self._state, CTL_SET_SIGNAL, k)
+
+    def set_fec(self, enabled=True):
+        _lib.opus_decoder_ctl(self._state, CTL_SET_FEC, 1 if enabled else 0)
+
+    def set_expected_packet_loss_percent(self, percentage):
+        _lib.opus_decoder_ctl(self._state, CTL_SET_PLP, min(100, max(0, int(percentage * 100))))
+
     def decode(self, data, frame_size):
-        max_data_bytes = len(data)
-        data = ctypes.cast(data, c_int16_ptr)
-        pcm = (ctypes.c_char * max_data_bytes)()
+        len_data = len(data)
+        data = (ctypes.c_char * len(data)).from_buffer(bytearray(data))
+        pcm = (ctypes.c_int16 * (frame_size * self.CHANNELS * ctypes.sizeof(ctypes.c_int16)))()
+        pcm_pointer = ctypes.cast(pcm, c_int16_ptr)
 
-        ret = _lib.opus_decode(self._state, data, frame_size, pcm, max_data_bytes)
+        ret = _lib.opus_decode(self._state, data, 0, pcm_pointer, frame_size, 0)
 
-        return array.array('b', pcm[:ret]).tobytes()
+        if ret < 0:
+            raise OpusError(ret)
+
+        return array.array('b', data[:ret]).tobytes()

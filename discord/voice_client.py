@@ -110,6 +110,7 @@ class VoiceClient:
         self._runner = None
         self._player = None
         self.encoder = None
+        self.decoder = opus.Decoder()
         self._lite_nonce = 0
 
         self.listening_socket = None
@@ -500,21 +501,24 @@ class VoiceClient:
 
     def _decrypt_xsalsa20_poly1305(self, data):
         box = nacl.secret.SecretBox(bytes(self.secret_key))
+        nonce = bytearray(24)
+        nonce[:12] = data[:12]
 
-        return box.decrypt(data)
+        return box.decrypt(bytes(data[12:]), nonce=bytes(nonce))
 
     def _decrypt_xsalsa20_poly1305_suffix(self, data):
         box = nacl.secret.SecretBox(bytes(self.secret_key))
-        data = data[:-nacl.secret.SecretBox.NONCE_SIZE]
+        nonce = bytearray(24)
+        nonce[:24] = data[-24:]
 
-        return box.decrypt(data)
+        return box.decrypt(bytes(data[12:-nacl.secret.SecretBox.NONCE_SIZE]), nonce=bytes(nonce))
 
     def _decrypt_xsalsa20_poly1305_lite(self, data):
         box = nacl.secret.SecretBox(bytes(self.secret_key))
-        data = data[:-4]
-        print(data.hex())
+        nonce = bytearray(24)
+        nonce[0:4] = data[-4:]
 
-        return box.decrypt(data)
+        return box.decrypt(bytes(data[12:-4]), nonce=bytes(nonce))
 
     async def recv(self, num_bytes):
         if self._connected.is_set():
@@ -522,20 +526,14 @@ class VoiceClient:
                 bytes_recv = bytes(self.listening_socket.recvfrom(num_bytes)[0])
             except BlockingIOError:
                 return None, None
-            print("RAW:", bytes_recv.hex())
-            csrc_length = 0
-            if (bytes_recv[0] & 0x01) != 0:
-                csrc_length = int(bytes_recv[0] & 0x0f) * 4
-                print("EXTENSION: BEDE or DEBE", bytes_recv[12+csrc_length:14+csrc_length].hex())
-            ssrc = bytes_recv[8:12]
-            data = bytes_recv[12 + csrc_length:]
+
             decrypt_packet = getattr(self, '_decrypt_' + self.mode)
+            ssrc = int.from_bytes(bytes_recv[8:12], byteorder='big')  # TODO FIX
             try:
-                decrypted_data = decrypt_packet(data)
+                decrypted_data = decrypt_packet(bytes_recv)
             except Exception:
                 return None, None
-            print("Successfully decrypted data")
-            decoded_data = self.encoder.decode(decrypted_data, self.encoder.SAMPLES_PER_FRAME)
+            decoded_data = self.decoder.decode(decrypted_data, self.decoder.SAMPLES_PER_FRAME)
             return decoded_data, ssrc
         else:
             return None, None
