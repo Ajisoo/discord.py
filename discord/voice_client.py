@@ -534,9 +534,6 @@ class VoiceClient:
             bede = bytes_recv[0] & 0x10 and decrypted_data[:2] == 0xBEDE.to_bytes(byteorder='big', length=2)
 
             decoded_data = self.decoders[ssrc].decode(decrypted_data[8 if bede else 0:], 3840)
-            if not self.encoder:
-                self.encoder = opus.Encoder()
-            self.send_audio_packet(decoded_data)
             return decoded_data, ssrc
         else:
             return None, None
