@@ -85,8 +85,6 @@ exported_functions = [
         [ctypes.c_int, ctypes.c_int, c_int_ptr], DecoderStructPtr, _err_ne),
     ('opus_decode',
         [DecoderStructPtr, ctypes.c_char_p, ctypes.c_int32, c_int16_ptr, ctypes.c_int, ctypes.c_int], ctypes.c_int, _err_lt),
-    ('opus_decoder_ctl',
-        None, ctypes.c_int32, _err_lt),
     ('opus_decoder_destroy',
         [DecoderStructPtr], None, None),
 ]

@@ -111,9 +111,8 @@ class VoiceClient:
         self._player = None
         self.encoder = None
         self.decoders = {}
-        self._lite_nonce = 0
-
         self.listening_socket = None
+        self._lite_nonce = 0
 
     warn_nacl = not has_nacl
     supported_modes = (
@@ -145,9 +144,6 @@ class VoiceClient:
         self.listening_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.listening_socket.setblocking(False)
         self.listening_socket.bind((socket.gethostbyname_ex(socket.gethostname())[-1][0], port))
-        print("Listening to", socket.gethostbyname_ex(socket.gethostname())[-1][0], port)
-        print("Pushing to:", self.endpoint_ip, self.voice_port)
-        print(self.mode)
 
     async def start_handshake(self):
         log.info('Starting voice handshake...')
@@ -485,12 +481,12 @@ class VoiceClient:
         opus.OpusError
             Encoding the data failed.
         """
+
         self.checked_add('sequence', 1, 65535)
         if encode:
             encoded_data = self.encoder.encode(data, self.encoder.SAMPLES_PER_FRAME)
         else:
             encoded_data = data
-
         packet = self._get_voice_packet(encoded_data)
         try:
             self.socket.sendto(packet, (self.endpoint_ip, self.voice_port))
