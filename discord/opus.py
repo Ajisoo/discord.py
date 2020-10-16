@@ -312,11 +312,6 @@ class Decoder:
                 raise OpusNotLoaded()
 
         self._state = self._create_state()
-        #self.set_bitrate(128)
-        #self.set_fec(True)
-        #self.set_expected_packet_loss_percent(0.15)
-        #self.set_bandwidth('full')
-        #self.set_signal_type('auto')
 
     def __del__(self):
         if hasattr(self, '_state'):
@@ -327,41 +322,12 @@ class Decoder:
         ret = ctypes.c_int()
         return _lib.opus_decoder_create(self.SAMPLING_RATE, self.CHANNELS, ctypes.byref(ret))
 
-    def set_bitrate(self, kbps):
-        kbps = min(512, max(16, int(kbps)))
-
-        _lib.opus_decoder_ctl(self._state, CTL_SET_BITRATE, kbps * 1024)
-        return kbps
-
-    def set_bandwidth(self, req):
-        if req not in band_ctl:
-            raise KeyError('%r is not a valid bandwidth setting. Try one of: %s' % (req, ','.join(band_ctl)))
-
-        k = band_ctl[req]
-        _lib.opus_decoder_ctl(self._state, CTL_SET_BANDWIDTH, k)
-
-    def set_signal_type(self, req):
-        if req not in signal_ctl:
-            raise KeyError('%r is not a valid signal setting. Try one of: %s' % (req, ','.join(signal_ctl)))
-
-        k = signal_ctl[req]
-        _lib.opus_decoder_ctl(self._state, CTL_SET_SIGNAL, k)
-
-    def set_fec(self, enabled=True):
-        _lib.opus_decoder_ctl(self._state, CTL_SET_FEC, 1 if enabled else 0)
-
-    def set_expected_packet_loss_percent(self, percentage):
-        _lib.opus_decoder_ctl(self._state, CTL_SET_PLP, min(100, max(0, int(percentage * 100))))
-
     def decode(self, data, frame_size):
-        len_data = len(data)
-        data = (ctypes.c_char * len(data)).from_buffer(bytearray(data))
         pcm = (ctypes.c_int16 * (frame_size * self.CHANNELS * ctypes.sizeof(ctypes.c_int16)))()
         pcm_pointer = ctypes.cast(pcm, c_int16_ptr)
 
-        ret = _lib.opus_decode(self._state, data, 0, pcm_pointer, frame_size, 0)
+        ret = _lib.opus_decode(self._state, data, len(data), pcm_pointer, frame_size, 0)
 
         if ret < 0:
             raise OpusError(ret)
-
-        return array.array('b', data[:ret]).tobytes()
+        return array.array('h', pcm[:ret * self.CHANNELS]).tobytes()

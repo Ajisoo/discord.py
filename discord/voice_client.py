@@ -110,7 +110,7 @@ class VoiceClient:
         self._runner = None
         self._player = None
         self.encoder = None
-        self.decoder = opus.Decoder()
+        self.decoders = {}
         self._lite_nonce = 0
 
         self.listening_socket = None
@@ -485,12 +485,12 @@ class VoiceClient:
         opus.OpusError
             Encoding the data failed.
         """
-
         self.checked_add('sequence', 1, 65535)
         if encode:
             encoded_data = self.encoder.encode(data, self.encoder.SAMPLES_PER_FRAME)
         else:
             encoded_data = data
+
         packet = self._get_voice_packet(encoded_data)
         try:
             self.socket.sendto(packet, (self.endpoint_ip, self.voice_port))
@@ -526,14 +526,21 @@ class VoiceClient:
                 bytes_recv = bytes(self.listening_socket.recvfrom(num_bytes)[0])
             except BlockingIOError:
                 return None, None
-
             decrypt_packet = getattr(self, '_decrypt_' + self.mode)
             ssrc = int.from_bytes(bytes_recv[8:12], byteorder='big')  # TODO FIX
+            if ssrc not in self.decoders.keys():
+                self.decoders[ssrc] = opus.Decoder()
             try:
                 decrypted_data = decrypt_packet(bytes_recv)
             except Exception:
                 return None, None
-            decoded_data = self.decoder.decode(decrypted_data, self.decoder.SAMPLES_PER_FRAME)
+
+            bede = bytes_recv[0] & 0x10 and decrypted_data[:2] == 0xBEDE.to_bytes(byteorder='big', length=2)
+
+            decoded_data = self.decoders[ssrc].decode(decrypted_data[8 if bede else 0:], 3840)
+            if not self.encoder:
+                self.encoder = opus.Encoder()
+            self.send_audio_packet(decoded_data)
             return decoded_data, ssrc
         else:
             return None, None
