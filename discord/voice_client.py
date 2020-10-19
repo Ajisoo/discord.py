@@ -111,6 +111,7 @@ class VoiceClient:
         self._player = None
         self.encoder = None
         self.decoders = {}
+        self.ssrc_map = {}
         self.listening_socket = None
         self._lite_nonce = 0
 
@@ -516,14 +517,14 @@ class VoiceClient:
 
         return box.decrypt(bytes(data[12:-4]), nonce=bytes(nonce))
 
-    async def recv(self, num_bytes):
+    def recv(self, num_bytes):
         if self._connected.is_set():
             try:
                 bytes_recv = bytes(self.listening_socket.recvfrom(num_bytes)[0])
             except BlockingIOError:
                 return None, None
             decrypt_packet = getattr(self, '_decrypt_' + self.mode)
-            ssrc = int.from_bytes(bytes_recv[8:12], byteorder='big')  # TODO FIX
+            ssrc = int.from_bytes(bytes_recv[8:12], byteorder='big')
             if ssrc not in self.decoders.keys():
                 self.decoders[ssrc] = opus.Decoder()
             try:
@@ -534,6 +535,10 @@ class VoiceClient:
             bede = bytes_recv[0] & 0x10 and decrypted_data[:2] == 0xBEDE.to_bytes(byteorder='big', length=2)
 
             decoded_data = self.decoders[ssrc].decode(decrypted_data[8 if bede else 0:], 3840)
-            return decoded_data, ssrc
+            try:
+                return decoded_data, self.ssrc_map[ssrc]
+            except KeyError:
+                # Happens on the first silence packets that a user sends.
+                return decoded_data, None
         else:
             return None, None

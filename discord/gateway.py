@@ -766,6 +766,13 @@ class DiscordVoiceWebSocket:
             interval = data['heartbeat_interval'] / 1000.0
             self._keep_alive = VoiceKeepAliveHandler(ws=self, interval=min(interval, 5.0))
             self._keep_alive.start()
+        elif op == self.SPEAKING:
+            self._connection.ssrc_map[int(data['ssrc'])] = int(data['user_id'])
+        elif op == self.CLIENT_DISCONNECT:
+            user_id = data['user_id']
+            for key in self._connection.ssrc_map.keys():
+                if self._connection.ssrc_map[key] == user_id:
+                    del self._connection.ssrc_map[key]
 
     async def initial_connection(self, data):
         state = self._connection

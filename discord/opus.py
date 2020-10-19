@@ -294,8 +294,8 @@ class Encoder:
 
 
 class Decoder:
-    SAMPLING_RATE = 48000
-    CHANNELS = 2
+    SAMPLING_RATE = 16000
+    CHANNELS = 1
     FRAME_LENGTH = 20
     SAMPLE_SIZE = 4  # (bit_rate / 8) * CHANNELS (bit_rate == 16)
     SAMPLES_PER_FRAME = int(SAMPLING_RATE / 1000 * FRAME_LENGTH)
